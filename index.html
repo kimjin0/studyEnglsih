@@ -8,13 +8,8 @@
 <body>
 <div class="container">
   <div class="slide">
-    <ul class="list">
-      <li class="active">
-        <a href="/">two mice</a>
-    </li>      
-      <li>
-          <a href="/marketplace.html">marketplace</a>
-      </li>
+    <ul class="list" id="navigation">
+      <!-- Navigation will be dynamically generated -->
     </ul>
   </div>
   </div>  <div class="voice-control" style="margin-bottom: 1em;">
@@ -51,6 +46,7 @@
 </div>
 
 <script>
+  // Global variables
   let selectedGroup = 'all';
   let sentences = {};
   let usedSentences = new Set();
@@ -61,26 +57,101 @@
   let speechRate = 0.85;
   let timer = null;
   let voices = [];
+  let currentPage = 'two-mice';
+  let pageConfig = {};
+  let currentSentences = [];
 
-  document.getElementById('rate').value = speechRate;
-  document.getElementById('rate').addEventListener('input', function() {
-    speechRate = this.value;
-    document.getElementById('rate-value').textContent = speechRate;
+  // Initialize the application
+  document.addEventListener('DOMContentLoaded', function() {
+    initializeApp();
   });
 
-  window.speechSynthesis.onvoiceschanged = function() {
-    voices = this.getVoices();
-  };
+  async function initializeApp() {
+    // Load page configuration
+    try {
+      const response = await fetch('/api/pages.json');
+      pageConfig = await response.json();
+      setupNavigation();
+      loadPage(currentPage);
+    } catch (error) {
+      console.error('Failed to load page configuration:', error);
+    }
 
-  fetch('/api/sentences.json')
-    .then(response => response.json())
-    .then(data => {
-      sentences = data;
+    // Setup speech synthesis
+    document.getElementById('rate').value = speechRate;
+    document.getElementById('rate').addEventListener('input', function() {
+      speechRate = this.value;
+      document.getElementById('rate-value').textContent = speechRate;
     });
+
+    window.speechSynthesis.onvoiceschanged = function() {
+      voices = this.getVoices();
+    };
+
+    // Load general sentences
+    fetch('/api/sentences.json')
+      .then(response => response.json())
+      .then(data => {
+        sentences = data;
+      });
+  }
+
+  function setupNavigation() {
+    const nav = document.getElementById('navigation');
+    nav.innerHTML = '';
+    
+    Object.keys(pageConfig.pages).forEach(pageKey => {
+      const page = pageConfig.pages[pageKey];
+      const li = document.createElement('li');
+      li.className = pageKey === currentPage ? 'active' : '';
+      
+      const a = document.createElement('a');
+      a.href = '#';
+      a.textContent = page.title;
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        loadPage(pageKey);
+      });
+      
+      li.appendChild(a);
+      nav.appendChild(li);
+    });
+  }
+
+  async function loadPage(pageKey) {
+    if (!pageConfig.pages[pageKey]) {
+      console.error('Page not found:', pageKey);
+      return;
+    }
+
+    currentPage = pageKey;
+    const page = pageConfig.pages[pageKey];
+    
+    // Update navigation
+    document.querySelectorAll('#navigation li').forEach(li => {
+      li.classList.remove('active');
+    });
+    const activeNavItem = Array.from(document.querySelectorAll('#navigation a')).find(a => 
+      a.textContent === page.title
+    );
+    if (activeNavItem) {
+      activeNavItem.parentElement.classList.add('active');
+    }
+    
+    // Load page data
+    try {
+      const response = await fetch(page.apiPath);
+      currentSentences = await response.json();
+      displayAllSentences();
+    } catch (error) {
+      console.error('Failed to load page data:', error);
+    }
+  }
 
   function updateSelectedGroup(value) {
     selectedGroup = value;
   }
+  
   const $cardListen = document.getElementById('cardListen');
   const $card = document.getElementById('card');
 
@@ -219,28 +290,38 @@
   }
 
   let currentSentenceIndex = 0;
-  let twoMiceSentences = [];
-
-  fetch('/api/two-mice.json')
-      .then(response => response.json())
-      .then(data => {
-          twoMiceSentences = data;
-          displayAllSentences();
-      });
 
   function displayAllSentences() {
       const sentenceList = document.getElementById('sentence-list');
       sentenceList.innerHTML = '';
-      twoMiceSentences.forEach((sentence, index) => {
+      const currentPageConfig = pageConfig.pages[currentPage];
+      
+      currentSentences.forEach((sentence, index) => {
           const listItem = document.createElement('li');
-          listItem.innerHTML = `${sentence.en} <span style="font-size: 0.5em; color: #888; cursor: pointer;" onclick="toggleKorean(${index})">보기</span> <span style="font-size: 0.5em; color: #888; cursor: pointer;" onclick="readSentence(${index})">🔊</span> <br> <span id="korean-${index}" style="display: none; color: #007BFF;">${sentence.ko}</span>`;
+          let buttons = `<span style="font-size: 0.5em; color: #888; cursor: pointer;" onclick="toggleKorean(${index})">보기</span>`;
+          
+          // Add explanation button if page supports it
+          if (currentPageConfig.hasExplanation) {
+              buttons += ` <span style="font-size: 0.5em; color: #888; cursor: pointer;" onclick="toggleExplanation(${index})">설명</span>`;
+          }
+          
+          buttons += ` <span style="font-size: 0.5em; color: #888; cursor: pointer;" onclick="readSentence(${index})">🔊</span>`;
+          
+          let content = `${sentence.en} ${buttons} <br> <span id="korean-${index}" style="display: none; color: #007BFF;">${sentence.ko}</span>`;
+          
+          // Add explanation span if page supports it
+          if (currentPageConfig.hasExplanation) {
+              content += ` <span id="explanation-${index}" style="display: none; color: #555;">${sentence.explain || ''}</span>`;
+          }
+          
+          listItem.innerHTML = content;
           listItem.style.marginBottom = '1.5em';
           sentenceList.appendChild(listItem);
       });
   }
 
   function readSentence(index) {
-      const sentence = twoMiceSentences[index];
+      const sentence = currentSentences[index];
       const utterance = new SpeechSynthesisUtterance(sentence.en);
       utterance.lang = 'en-US'; // Ensure language is set to English
       utterance.rate = speechRate;
@@ -259,14 +340,23 @@
     } else {
         koreanText.style.display = 'none';
     }
-}
+  }
+
+  function toggleExplanation(index) {
+    const explanationText = document.getElementById(`explanation-${index}`);
+    if (explanationText.style.display === 'none') {
+        explanationText.style.display = 'inline';
+    } else {
+        explanationText.style.display = 'none';
+    }
+  }
 
     document.getElementById('readAllButton').addEventListener('click', function() {
         const repeatCount = parseInt(document.getElementById('repeatCount').value, 10);
         let index = 0;
         function speakNextSentence() {
-            if (index < twoMiceSentences.length) {
-                const sentence = twoMiceSentences[index];
+            if (index < currentSentences.length) {
+                const sentence = currentSentences[index];
                 let repeat = 0;
                 function repeatSentence() {
                     if (repeat < repeatCount) {

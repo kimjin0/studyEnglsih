@@ -1,0 +1,17 @@
+{
+  "pages": {
+    "two-mice": {
+      "title": "Two Mice",
+      "apiPath": "/api/two-mice.json",
+      "hasExplanation": false,
+      "description": "Two mice story sentences"
+    },
+    "marketplace": {
+      "title": "Marketplace",
+      "apiPath": "/api/marketplace.json", 
+      "hasExplanation": true,
+      "description": "Marketplace conversation sentences"
+    }
+  },
+  "defaultPage": "two-mice"
+}
